@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 from torch.optim import Adam
 from utils import soft_update, hard_update
-from model import GaussianPolicy, QNetwork, DeterministicPolicy
+from model import GaussianPolicy, QNetwork, DeterministicPolicy, Discriminator
 
 
 class SAC(object):
@@ -25,6 +25,9 @@ class SAC(object):
         self.critic_target = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(self.device)
         hard_update(self.critic_target, self.critic)
 
+        self.disc = Discriminator(num_inputs, args.num_skills, args.hidden_size).to(device=self.device)
+        self.disc_optim = Adam(self.disc.parameters(), lr=args.lr)
+
         if self.policy_type == "Gaussian":
             # Target Entropy = −dim(A) (e.g. , -6 for HalfCheetah-v2) as given in the paper
             if self.automatic_entropy_tuning == True:
@@ -32,27 +35,37 @@ class SAC(object):
                 self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
                 self.alpha_optim = Adam([self.log_alpha], lr=args.lr)
 
-            self.policy = GaussianPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
+            self.policy = GaussianPolicy(num_inputs + args.num_skills, action_space.shape[0], args.hidden_size, action_space).to(self.device)
             self.policy_optim = Adam(self.policy.parameters(), lr=args.lr)
 
         else:
             self.alpha = 0
             self.automatic_entropy_tuning = False
-            self.policy = DeterministicPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
+            self.policy = DeterministicPolicy(num_inputs + args.num_skills, action_space.shape[0], args.hidden_size, action_space).to(self.device)
             self.policy_optim = Adam(self.policy.parameters(), lr=args.lr)
 
-    def select_action(self, state, eval=False):
+    def select_action(self, state, content, eval=False):
         state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
+        content = torch.FloatTensor(content).to(self.device).unsqueeze(0)
         if eval == False:
-            action, _, _ = self.policy.sample(state)
+            action, _, _ = self.policy.sample(state, content)
         else:
-            _, _, action = self.policy.sample(state)
+            _, _, action = self.policy.sample(state, content)
         return action.detach().cpu().numpy()[0]
+
+    def state_score(self, content, state):
+        state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
+        content = torch.FloatTensor(content).to(self.device).unsqueeze(0)
+        score = self.disc(state)
+        score = score * content
+        score, _ = torch.max(score, dim=1, keepdim=False)
+        return score.detach().cpu().numpy()[0]
 
     def update_parameters(self, memory, batch_size, updates):
         # Sample a batch from memory
-        state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
+        content_batch, state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
 
+        content_batch = torch.FloatTensor(content_batch).to(self.device)
         state_batch = torch.FloatTensor(state_batch).to(self.device)
         next_state_batch = torch.FloatTensor(next_state_batch).to(self.device)
         action_batch = torch.FloatTensor(action_batch).to(self.device)
@@ -60,7 +73,7 @@ class SAC(object):
         mask_batch = torch.FloatTensor(mask_batch).to(self.device).unsqueeze(1)
 
         with torch.no_grad():
-            next_state_action, next_state_log_pi, _ = self.policy.sample(next_state_batch)
+            next_state_action, next_state_log_pi, _ = self.policy.sample(next_state_batch, content_batch)
             qf1_next_target, qf2_next_target = self.critic_target(next_state_batch, next_state_action)
             min_qf_next_target = torch.min(qf1_next_target, qf2_next_target) - self.alpha * next_state_log_pi
             next_q_value = reward_batch + mask_batch * self.gamma * (min_qf_next_target)
@@ -69,7 +82,7 @@ class SAC(object):
         qf1_loss = F.mse_loss(qf1, next_q_value) # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
         qf2_loss = F.mse_loss(qf2, next_q_value) # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
 
-        pi, log_pi, _ = self.policy.sample(state_batch)
+        pi, log_pi, _ = self.policy.sample(state_batch, content_batch)
 
         qf1_pi, qf2_pi = self.critic(state_batch, pi)
         min_qf_pi = torch.min(qf1_pi, qf2_pi)
@@ -106,6 +119,21 @@ class SAC(object):
             soft_update(self.critic_target, self.critic, self.tau)
 
         return qf1_loss.item(), qf2_loss.item(), policy_loss.item(), alpha_loss.item(), alpha_tlogs.item()
+
+    def update_disc(self, memory, batch_size, steps=1):
+        content_batch, state_batch, _, _, _, _ = memory.sample(batch_size=batch_size)
+        state_batch = torch.FloatTensor(state_batch).to(self.device)
+        content_batch = torch.FloatTensor(content_batch).to(self.device)
+
+        for _ in range(steps):
+            prob_vector = self.disc(state_batch)
+            disc_loss = F.binary_cross_entropy(prob_vector, content_batch)
+
+            self.disc_optim.zero_grad()
+            disc_loss.backward()
+            self.disc_optim.step()
+
+        return disc_loss.item()
 
     # Save model parameters
     def save_model(self, env_name, suffix="", actor_path=None, critic_path=None):

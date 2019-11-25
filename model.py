@@ -30,6 +30,22 @@ class ValueNetwork(nn.Module):
         x = self.linear3(x)
         return x
 
+class Discriminator(nn.Module):
+    def __init__(self, num_inputs, num_skills, hidden_dim):
+        super(Discriminator, self).__init__()
+
+        self.linear1 = nn.Linear(num_inputs, hidden_dim)
+        self.linear2 = nn.Linear(hidden_dim, hidden_dim)
+        self.linear3 = nn.Linear(hidden_dim, num_skills)
+
+        self.apply(weights_init_)
+
+    def forward(self, state):
+        x = F.relu(self.linear1(state))
+        x = F.relu(self.linear2(x))
+        x = F.softmax(self.linear3(x))
+
+        return x
 
 class QNetwork(nn.Module):
     def __init__(self, num_inputs, num_actions, hidden_dim):
@@ -83,16 +99,17 @@ class GaussianPolicy(nn.Module):
             self.action_bias = torch.FloatTensor(
                 (action_space.high + action_space.low) / 2.)
 
-    def forward(self, state):
-        x = F.relu(self.linear1(state))
+    def forward(self, state, content):
+        xu = torch.cat([state, content], 1)
+        x = F.relu(self.linear1(xu))
         x = F.relu(self.linear2(x))
         mean = self.mean_linear(x)
         log_std = self.log_std_linear(x)
         log_std = torch.clamp(log_std, min=LOG_SIG_MIN, max=LOG_SIG_MAX)
         return mean, log_std
 
-    def sample(self, state):
-        mean, log_std = self.forward(state)
+    def sample(self, state, content):
+        mean, log_std = self.forward(state, content)
         std = log_std.exp()
         normal = Normal(mean, std)
         x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))

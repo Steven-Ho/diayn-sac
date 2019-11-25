@@ -6,7 +6,7 @@ import itertools
 import torch
 from sac import SAC
 from tensorboardX import SummaryWriter
-from replay_memory import ReplayMemory
+from replay_memory import ReplayMemory, Buffer
 
 parser = argparse.ArgumentParser(description='PyTorch Soft Actor-Critic Args')
 parser.add_argument('--env-name', default="HalfCheetah-v2",
@@ -15,6 +15,8 @@ parser.add_argument('--policy', default="Gaussian",
                     help='Policy Type: Gaussian | Deterministic (default: Gaussian)')
 parser.add_argument('--eval', type=bool, default=True,
                     help='Evaluates a policy a policy every 10 episode (default: True)')
+parser.add_argument('--num_skills', type=int, default=10,
+                    help='Number of skills to learn')
 parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
                     help='discount factor for reward (default: 0.99)')
 parser.add_argument('--tau', type=float, default=0.005, metavar='G',
@@ -42,6 +44,8 @@ parser.add_argument('--target_update_interval', type=int, default=1, metavar='N'
                     help='Value target update per no. of updates per step (default: 1)')
 parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                     help='size of replay buffer (default: 10000000)')
+parser.add_argument('--buffer_size', type=int, default=10000, metavar='N',
+                    help='Replay buffer for discriminator')
 parser.add_argument('--cuda', action="store_true",
                     help='run on CUDA (default: False)')
 args = parser.parse_args()
@@ -62,6 +66,7 @@ writer = SummaryWriter(logdir='runs/{}_SAC_{}_{}_{}'.format(datetime.datetime.no
 
 # Memory
 memory = ReplayMemory(args.replay_size)
+buffer = Buffer(args.buffer_size)
 
 # Training Loop
 total_numsteps = 0
@@ -70,14 +75,18 @@ updates = 0
 for i_episode in itertools.count(1):
     episode_reward = 0
     episode_steps = 0
+    episode_sr = 0 # pseudo reward
     done = False
     state = env.reset()
 
+    content_index = np.random.randint(0, high=args.num_skills)
+    content = np.zeros(args.num_skills)
+    content[content_index] = 1.
     while not done:
         if args.start_steps > total_numsteps:
             action = env.action_space.sample()  # Sample random action
         else:
-            action = agent.select_action(state)  # Sample action from policy
+            action = agent.select_action(state, content)  # Sample action from policy
 
         if len(memory) > args.batch_size:
             # Number of updates per step in environment
@@ -85,6 +94,9 @@ for i_episode in itertools.count(1):
                 # Update parameters of all the networks
                 critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory, args.batch_size, updates)
 
+                disc_loss = agent.update_disc(memory, args.batch_size, steps=1)
+                
+                writer.add_scalar('loss/disc', disc_loss, updates)
                 writer.add_scalar('loss/critic_1', critic_1_loss, updates)
                 writer.add_scalar('loss/critic_2', critic_2_loss, updates)
                 writer.add_scalar('loss/policy', policy_loss, updates)
@@ -97,11 +109,16 @@ for i_episode in itertools.count(1):
         total_numsteps += 1
         episode_reward += reward
 
+        state_prob = agent.state_score(content, next_state)
+        pseudo_reward = max(-10, np.log(state_prob) + np.log(args.num_skills))
+        episode_sr += pseudo_reward
+
         # Ignore the "done" signal if it comes from hitting the time horizon.
         # (https://github.com/openai/spinningup/blob/master/spinup/algos/sac/sac.py)
         mask = 1 if episode_steps == env._max_episode_steps else float(not done)
 
-        memory.push(state, action, reward, next_state, mask) # Append transition to memory
+        memory.push(content, state, action, pseudo_reward, next_state, mask) # Append transition to memory
+        buffer.push(state, content)
 
         state = next_state
 
@@ -109,31 +126,42 @@ for i_episode in itertools.count(1):
         break
 
     writer.add_scalar('reward/train', episode_reward, i_episode)
-    print("Episode: {}, total numsteps: {}, episode steps: {}, reward: {}".format(i_episode, total_numsteps, episode_steps, round(episode_reward, 2)))
+    writer.add_scalar('reward/train_pseudo', episode_sr, i_episode)
+    print("Episode: {}, total numsteps: {}, episode steps: {}, reward: {}, sr: {}".format(i_episode, total_numsteps, episode_steps, round(episode_reward, 2), round(episode_sr, 2)))
+
 
     if i_episode % 10 == 0 and args.eval == True:
         avg_reward = 0.
-        episodes = 10
-        for _  in range(episodes):
+        avg_sr = 0.
+        episodes = args.num_skills
+        for i  in range(episodes):
             state = env.reset()
             episode_reward = 0
+            episode_sr = 0
             done = False
+            content = np.zeros(args.num_skills)
+            content[i] = 1.
             while not done:
-                action = agent.select_action(state, eval=True)
+                action = agent.select_action(state, content, eval=True)
 
                 next_state, reward, done, _ = env.step(action)
                 episode_reward += reward
 
+                pseudo_reward = np.log(agent.state_score(content, next_state)) + np.log(args.num_skills)
+                episode_sr += pseudo_reward
 
                 state = next_state
             avg_reward += episode_reward
+            avg_sr += episode_sr
         avg_reward /= episodes
+        avg_sr /= episodes
 
 
         writer.add_scalar('avg_reward/test', avg_reward, i_episode)
+        writer.add_scalar('avg_reward/test_pseudo', avg_sr, i_episode)
 
         print("----------------------------------------")
-        print("Test Episodes: {}, Avg. Reward: {}".format(episodes, round(avg_reward, 2)))
+        print("Test Episodes: {}, Avg. Reward: {}, Avg. SR: {}".format(episodes, round(avg_reward, 2), round(avg_sr, 2)))
         print("----------------------------------------")
 
 env.close()
