@@ -7,16 +7,16 @@ class ReplayMemory:
         self.buffer = []
         self.position = 0
 
-    def push(self, content, state, action, reward, next_state, done):
+    def push(self, context, state, action, reward, next_state, done):
         if len(self.buffer) < self.capacity:
             self.buffer.append(None)
-        self.buffer[self.position] = (content, state, action, reward, next_state, done)
+        self.buffer[self.position] = (context, state, action, reward, next_state, done)
         self.position = (self.position + 1) % self.capacity
 
     def sample(self, batch_size):
         batch = random.sample(self.buffer, batch_size)
-        content, state, action, reward, next_state, done = map(np.stack, zip(*batch))
-        return content, state, action, reward, next_state, done
+        context, state, action, reward, next_state, done = map(np.stack, zip(*batch))
+        return context, state, action, reward, next_state, done
 
     def __len__(self):
         return len(self.buffer)
@@ -29,16 +29,16 @@ class Buffer:
 
     def sample(self, batch_size):
         batch = random.sample(self.buffer, batch_size)
-        state, content = map(np.stack, zip(*batch))
-        return content, state       
+        state, context = map(np.stack, zip(*batch))
+        return context, state       
 
-    def push(self, state, content):
+    def push(self, state, context):
         if len(self.buffer) < self.capacity:
             self.buffer.append(None)
-        self.buffer[self.pointer] = (state, content)
+        self.buffer[self.pointer] = (state, context)
         self.pointer = (self.pointer + 1) % self.capacity
 
     def retrieve(self):
         batch = np.asarray(self.buffer)
-        state, content = map(np.stack, zip(*batch))
-        return content, state
+        state, context = map(np.stack, zip(*batch))
+        return context, state

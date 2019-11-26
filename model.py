@@ -99,8 +99,8 @@ class GaussianPolicy(nn.Module):
             self.action_bias = torch.FloatTensor(
                 (action_space.high + action_space.low) / 2.)
 
-    def forward(self, state, content):
-        xu = torch.cat([state, content], 1)
+    def forward(self, state, context):
+        xu = torch.cat([state, context], 1)
         x = F.relu(self.linear1(xu))
         x = F.relu(self.linear2(x))
         mean = self.mean_linear(x)
@@ -108,8 +108,8 @@ class GaussianPolicy(nn.Module):
         log_std = torch.clamp(log_std, min=LOG_SIG_MIN, max=LOG_SIG_MAX)
         return mean, log_std
 
-    def sample(self, state, content):
-        mean, log_std = self.forward(state, content)
+    def sample(self, state, context):
+        mean, log_std = self.forward(state, context)
         std = log_std.exp()
         normal = Normal(mean, std)
         x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))
