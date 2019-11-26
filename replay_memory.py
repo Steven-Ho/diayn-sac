@@ -27,6 +27,11 @@ class Buffer:
         self.capacity = capacity
         self.pointer = 0
 
+    def sample(self, batch_size):
+        batch = random.sample(self.buffer, batch_size)
+        state, content = map(np.stack, zip(*batch))
+        return content, state       
+
     def push(self, state, content):
         if len(self.buffer) < self.capacity:
             self.buffer.append(None)
@@ -36,4 +41,4 @@ class Buffer:
     def retrieve(self):
         batch = np.asarray(self.buffer)
         state, content = map(np.stack, zip(*batch))
-        return state, content
+        return content, state

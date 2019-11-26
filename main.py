@@ -44,7 +44,7 @@ parser.add_argument('--target_update_interval', type=int, default=1, metavar='N'
                     help='Value target update per no. of updates per step (default: 1)')
 parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                     help='size of replay buffer (default: 10000000)')
-parser.add_argument('--buffer_size', type=int, default=10000, metavar='N',
+parser.add_argument('--buffer_size', type=int, default=100000, metavar='N',
                     help='Replay buffer for discriminator')
 parser.add_argument('--cuda', action="store_true",
                     help='run on CUDA (default: False)')
@@ -93,9 +93,8 @@ for i_episode in itertools.count(1):
             for i in range(args.updates_per_step):
                 # Update parameters of all the networks
                 critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory, args.batch_size, updates)
+                disc_loss, disc_loss_old = agent.update_disc(memory, args.batch_size)
 
-                disc_loss = agent.update_disc(memory, args.batch_size, steps=1)
-                
                 writer.add_scalar('loss/disc', disc_loss, updates)
                 writer.add_scalar('loss/critic_1', critic_1_loss, updates)
                 writer.add_scalar('loss/critic_2', critic_2_loss, updates)
@@ -110,7 +109,7 @@ for i_episode in itertools.count(1):
         episode_reward += reward
 
         state_prob = agent.state_score(content, next_state)
-        pseudo_reward = max(-10, np.log(state_prob) + np.log(args.num_skills))
+        pseudo_reward = max(-5, np.log(state_prob) + np.log(args.num_skills))
         episode_sr += pseudo_reward
 
         # Ignore the "done" signal if it comes from hitting the time horizon.
@@ -129,6 +128,13 @@ for i_episode in itertools.count(1):
     writer.add_scalar('reward/train_pseudo', episode_sr, i_episode)
     print("Episode: {}, total numsteps: {}, episode steps: {}, reward: {}, sr: {}".format(i_episode, total_numsteps, episode_steps, round(episode_reward, 2), round(episode_sr, 2)))
 
+    # if i_episode > 10:
+    #     disc_loss, disc_loss_old = agent.update_disc(buffer, args.batch_size * 10, steps=50)    
+    # else:        
+    #     disc_loss = 0.
+    #     disc_loss_old = 0.
+    # writer.add_scalar('loss/disc', disc_loss, i_episode)
+    # writer.add_scalar('loss/disc_delta', disc_loss - disc_loss_old, i_episode)
 
     if i_episode % 10 == 0 and args.eval == True:
         avg_reward = 0.
@@ -147,7 +153,8 @@ for i_episode in itertools.count(1):
                 next_state, reward, done, _ = env.step(action)
                 episode_reward += reward
 
-                pseudo_reward = np.log(agent.state_score(content, next_state)) + np.log(args.num_skills)
+                state_prob = agent.state_score(content, next_state)
+                pseudo_reward = max(-5, np.log(state_prob) + np.log(args.num_skills))
                 episode_sr += pseudo_reward
 
                 state = next_state

@@ -121,9 +121,12 @@ class SAC(object):
         return qf1_loss.item(), qf2_loss.item(), policy_loss.item(), alpha_loss.item(), alpha_tlogs.item()
 
     def update_disc(self, memory, batch_size, steps=1):
-        content_batch, state_batch, _, _, _, _ = memory.sample(batch_size=batch_size)
+        content_batch, state_batch, _, _, _, _ = memory.sample(batch_size)
         state_batch = torch.FloatTensor(state_batch).to(self.device)
         content_batch = torch.FloatTensor(content_batch).to(self.device)
+
+        prob_vector = self.disc(state_batch)
+        disc_loss_old = F.binary_cross_entropy(prob_vector, content_batch)
 
         for _ in range(steps):
             prob_vector = self.disc(state_batch)
@@ -133,7 +136,7 @@ class SAC(object):
             disc_loss.backward()
             self.disc_optim.step()
 
-        return disc_loss.item()
+        return disc_loss.item(), disc_loss_old.item()
 
     # Save model parameters
     def save_model(self, env_name, suffix="", actor_path=None, critic_path=None):
