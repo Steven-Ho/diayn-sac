@@ -19,7 +19,7 @@ parser.add_argument('--num_skills', type=int, default=10,
                     help='Number of skills to learn')
 parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
                     help='discount factor for reward (default: 0.99)')
-parser.add_argument('--tau', type=float, default=0.005, metavar='G',
+parser.add_argument('--tau', type=float, default=0.05, metavar='G',
                     help='target smoothing coefficient(τ) (default: 0.005)')
 parser.add_argument('--lr', type=float, default=0.0003, metavar='G',
                     help='learning rate (default: 0.0003)')
@@ -92,8 +92,7 @@ for i_episode in itertools.count(1):
             # Number of updates per step in environment
             for i in range(args.updates_per_step):
                 # Update parameters of all the networks
-                critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory, args.batch_size, updates)
-                disc_loss, disc_loss_old = agent.update_disc(memory, args.batch_size)
+                critic_1_loss, critic_2_loss, policy_loss, disc_loss, ent_loss, alpha = agent.update_parameters(memory, args.batch_size, updates)
 
                 writer.add_scalar('loss/disc', disc_loss, updates)
                 writer.add_scalar('loss/critic_1', critic_1_loss, updates)
@@ -108,8 +107,8 @@ for i_episode in itertools.count(1):
         total_numsteps += 1
         episode_reward += reward
 
-        state_prob = agent.state_score(context, next_state)
-        pseudo_reward = max(-5, np.log(state_prob) + np.log(args.num_skills))
+        state_prob = agent.state_prob(context, state)
+        pseudo_reward = np.log(max(state_prob, 1E-6)) + np.log(args.num_skills)
         episode_sr += pseudo_reward
 
         # Ignore the "done" signal if it comes from hitting the time horizon.
@@ -153,8 +152,8 @@ for i_episode in itertools.count(1):
                 next_state, reward, done, _ = env.step(action)
                 episode_reward += reward
 
-                state_prob = agent.state_score(context, next_state)
-                pseudo_reward = max(-5, np.log(state_prob) + np.log(args.num_skills))
+                state_prob = agent.state_prob(context, next_state)
+                pseudo_reward = np.log(max(state_prob, 1E-6)) + np.log(args.num_skills)
                 episode_sr += pseudo_reward
 
                 state = next_state

@@ -43,9 +43,9 @@ class Discriminator(nn.Module):
     def forward(self, state):
         x = F.relu(self.linear1(state))
         x = F.relu(self.linear2(x))
-        x = F.softmax(self.linear3(x))
+        x = self.linear3(x)
 
-        return x
+        return x # score, unnormalized
 
 class QNetwork(nn.Module):
     def __init__(self, num_inputs, num_actions, hidden_dim):
@@ -63,8 +63,8 @@ class QNetwork(nn.Module):
 
         self.apply(weights_init_)
 
-    def forward(self, state, action):
-        xu = torch.cat([state, action], 1)
+    def forward(self, state, context, action):
+        xu = torch.cat([state, context, action], 1)
         
         x1 = F.relu(self.linear1(xu))
         x1 = F.relu(self.linear2(x1))
