@@ -6,7 +6,7 @@ import itertools
 import torch
 from sac import SAC
 from tensorboardX import SummaryWriter
-from replay_memory import ReplayMemory, Buffer
+from replay_memory import ReplayMemory
 
 parser = argparse.ArgumentParser(description='PyTorch Soft Actor-Critic Args')
 parser.add_argument('--env-name', default="HalfCheetah-v2",
@@ -116,7 +116,6 @@ for i_episode in itertools.count(1):
         mask = 1 if episode_steps == env._max_episode_steps else float(not done)
 
         memory.push(context, state, action, pseudo_reward, next_state, mask) # Append transition to memory
-        # buffer.push(state, context)
 
         state = next_state
 

@@ -20,25 +20,3 @@ class ReplayMemory:
 
     def __len__(self):
         return len(self.buffer)
-
-class Buffer:
-    def __init__(self, capacity):
-        self.buffer = []
-        self.capacity = capacity
-        self.pointer = 0
-
-    def sample(self, batch_size):
-        batch = random.sample(self.buffer, batch_size)
-        state, context = map(np.stack, zip(*batch))
-        return context, state       
-
-    def push(self, state, context):
-        if len(self.buffer) < self.capacity:
-            self.buffer.append(None)
-        self.buffer[self.pointer] = (state, context)
-        self.pointer = (self.pointer + 1) % self.capacity
-
-    def retrieve(self):
-        batch = np.asarray(self.buffer)
-        state, context = map(np.stack, zip(*batch))
-        return context, state
