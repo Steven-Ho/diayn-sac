@@ -7,6 +7,8 @@ import torch
 from sac import SAC
 from tensorboardX import SummaryWriter
 from replay_memory import ReplayMemory
+from gym_navigation.envs.navigation import ContinuousNavigation2DEnv
+import cv2
 
 parser = argparse.ArgumentParser(description='PyTorch Soft Actor-Critic Args')
 parser.add_argument('--env-name', default="HalfCheetah-v2",
@@ -66,7 +68,6 @@ writer = SummaryWriter(logdir='runs/{}_SAC_{}_{}_{}'.format(datetime.datetime.no
 
 # Memory
 memory = ReplayMemory(args.replay_size)
-buffer = Buffer(args.buffer_size)
 
 # Training Loop
 total_numsteps = 0
@@ -139,7 +140,10 @@ for i_episode in itertools.count(1):
         avg_sr = 0.
         episodes = args.num_skills
         for i  in range(episodes):
+
             state = env.reset()
+            traj = []
+            traj.append([state, None, 0.0, False])
             episode_reward = 0
             episode_sr = 0
             done = False
@@ -150,6 +154,7 @@ for i_episode in itertools.count(1):
 
                 next_state, reward, done, _ = env.step(action)
                 episode_reward += reward
+                traj.append([next_state, action, reward, done])
 
                 state_prob = agent.state_prob(context, next_state)
                 pseudo_reward = np.log(max(state_prob, 1E-6)) + np.log(args.num_skills)
@@ -158,6 +163,8 @@ for i_episode in itertools.count(1):
                 state = next_state
             avg_reward += episode_reward
             avg_sr += episode_sr
+            img = env._render_trajectory(traj)
+            cv2.imwrite("runs/img/{}.png".format(i), img*255.0)
         avg_reward /= episodes
         avg_sr /= episodes
 
