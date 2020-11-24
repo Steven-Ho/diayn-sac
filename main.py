@@ -9,9 +9,9 @@ from tensorboardX import SummaryWriter
 from replay_memory import ReplayMemory
 from gym_navigation.envs.navigation import ContinuousNavigation2DEnv
 import cv2
-
+torch.autograd.set_detect_anomaly(True)
 parser = argparse.ArgumentParser(description='PyTorch Soft Actor-Critic Args')
-parser.add_argument('--env-name', default="HalfCheetah-v2",
+parser.add_argument('--env-name', default="2d-navigation-v0",
                     help='Mujoco Gym environment (default: HalfCheetah-v2)')
 parser.add_argument('--policy', default="Gaussian",
                     help='Policy Type: Gaussian | Deterministic (default: Gaussian)')
@@ -48,7 +48,7 @@ parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                     help='size of replay buffer (default: 10000000)')
 parser.add_argument('--buffer_size', type=int, default=100000, metavar='N',
                     help='Replay buffer for discriminator')
-parser.add_argument('--cuda', action="store_true",
+parser.add_argument('--cuda', action="store_false",
                     help='run on CUDA (default: False)')
 args = parser.parse_args()
 
@@ -163,8 +163,8 @@ for i_episode in itertools.count(1):
                 state = next_state
             avg_reward += episode_reward
             avg_sr += episode_sr
-            img = env._render_trajectory(traj)
-            cv2.imwrite("runs/img/{}.png".format(i), img*255.0)
+            # img = env._render_trajectory(traj)
+            # cv2.imwrite("runs/img/{}.png".format(i), img*255.0)
         avg_reward /= episodes
         avg_sr /= episodes
 
