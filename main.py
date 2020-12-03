@@ -150,7 +150,7 @@ for i_episode in itertools.count(1):
             context = np.zeros(args.num_skills)
             context[i] = 1.
             while not done:
-                action = agent.select_action(state, context, eval=True)
+                action = agent.select_action(state, context, eval=False)
 
                 next_state, reward, done, _ = env.step(action)
                 episode_reward += reward
@@ -163,8 +163,8 @@ for i_episode in itertools.count(1):
                 state = next_state
             avg_reward += episode_reward
             avg_sr += episode_sr
-            # img = env._render_trajectory(traj)
-            # cv2.imwrite("runs/img/{}.png".format(i), img*255.0)
+            img = env._render_trajectory(traj)
+            cv2.imwrite("runs/img/{}.png".format(i), img*255.0)
         avg_reward /= episodes
         avg_sr /= episodes
 
